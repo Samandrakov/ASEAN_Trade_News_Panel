@@ -1,22 +1,53 @@
-from .base import BaseScraper
-from .indonesia.antara import AntaraScraper
-from .indonesia.jakarta_post import JakartaPostScraper
-from .indonesia.kompas import KompasScraper
-from .malaysia.bernama import BernamaScraper
-from .malaysia.malaymail import MalayMailScraper
-from .malaysia.thestar import TheStarScraper
-from .vietnam.tuoitre import TuoiTreScraper
-from .vietnam.vietnam_news import VietnamNewsScraper
-from .vietnam.vnexpress import VnExpressScraper
+import json
+import logging
 
-SCRAPER_REGISTRY: dict[str, type[BaseScraper]] = {
-    "jakarta_post": JakartaPostScraper,
-    "kompas": KompasScraper,
-    "antara": AntaraScraper,
-    "vnexpress": VnExpressScraper,
-    "vietnam_news": VietnamNewsScraper,
-    "tuoitre": TuoiTreScraper,
-    "thestar": TheStarScraper,
-    "malaymail": MalayMailScraper,
-    "bernama": BernamaScraper,
-}
+from sqlalchemy import select
+
+from ..database import async_session
+from ..models.scrape_map import ScrapeMap
+
+logger = logging.getLogger(__name__)
+
+
+async def load_active_maps() -> list[dict]:
+    """Load all active sitemap definitions from the database."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(ScrapeMap).where(ScrapeMap.active == True)  # noqa: E712
+        )
+        maps = result.scalars().all()
+        return [
+            {
+                "db_id": m.id,
+                "map_id": m.map_id,
+                **json.loads(m.sitemap_json),
+            }
+            for m in maps
+        ]
+
+
+async def load_map_by_id(map_id: str) -> dict | None:
+    """Load a single sitemap by its map_id."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(ScrapeMap).where(ScrapeMap.map_id == map_id)
+        )
+        m = result.scalar_one_or_none()
+        if m:
+            return {
+                "db_id": m.id,
+                "map_id": m.map_id,
+                **json.loads(m.sitemap_json),
+            }
+        return None
+
+
+async def get_active_map_ids() -> list[str]:
+    """Return list of active map_ids (for API source validation)."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(ScrapeMap.map_id).where(
+                ScrapeMap.active == True  # noqa: E712
+            )
+        )
+        return [row[0] for row in result.all()]

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..api.deps import get_db
+from ..api.deps import get_db, require_auth
 from ..models.article import Article
 from ..schemas.analytics import SummarizeRequest, SummarizeResponse
 from ..services.llm_summarizer import summarize_articles
@@ -13,7 +13,11 @@ router = APIRouter(tags=["summarize"])
 
 
 @router.post("/summarize", response_model=SummarizeResponse)
-async def summarize(req: SummarizeRequest, db: AsyncSession = Depends(get_db)):
+async def summarize(
+    req: SummarizeRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
     query = select(Article)
 
     if req.article_ids:

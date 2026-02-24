@@ -1,100 +1,125 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import cloud from "d3-cloud";
 import type { WordFrequency } from "../types";
 
 interface Props {
   words: WordFrequency[];
+  width?: number;
+  height?: number;
 }
 
-export default function WordCloud({ words }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+interface LayoutWord {
+  text: string;
+  size: number;
+  x: number;
+  y: number;
+  rotate: number;
+  color: string;
+}
+
+const COLORS = [
+  "#1677ff",
+  "#52c41a",
+  "#faad14",
+  "#ff4d4f",
+  "#722ed1",
+  "#13c2c2",
+  "#eb2f96",
+  "#fa8c16",
+  "#2f54eb",
+  "#a0d911",
+  "#597ef7",
+  "#36cfc9",
+];
+
+export default function WordCloud({ words, width = 900, height = 420 }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [layoutWords, setLayoutWords] = useState<LayoutWord[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(width);
+
+  // Responsive width
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 100) setContainerWidth(Math.floor(w));
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
-    if (!canvasRef.current || words.length === 0) return;
+    if (words.length === 0) {
+      setLayoutWords([]);
+      return;
+    }
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
-
-    const maxCount = Math.max(...words.map((w) => w.count));
-    const minCount = Math.min(...words.map((w) => w.count));
+    const sorted = [...words].sort((a, b) => b.count - a.count).slice(0, 80);
+    const maxCount = sorted[0]?.count || 1;
+    const minCount = sorted[sorted.length - 1]?.count || 1;
     const range = maxCount - minCount || 1;
 
-    const colors = [
-      "#1677ff",
-      "#52c41a",
-      "#faad14",
-      "#ff4d4f",
-      "#722ed1",
-      "#13c2c2",
-      "#eb2f96",
-      "#fa8c16",
-      "#2f54eb",
-      "#a0d911",
-    ];
+    const cloudWords = sorted.map((w, i) => ({
+      text: w.word,
+      size: 14 + ((w.count - minCount) / range) * 48,
+      color: COLORS[i % COLORS.length],
+    }));
 
-    // Simple spiral placement
-    const placed: Array<{
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-    }> = [];
-
-    const sorted = [...words].sort((a, b) => b.count - a.count).slice(0, 60);
-
-    for (let i = 0; i < sorted.length; i++) {
-      const word = sorted[i];
-      const fontSize = 14 + ((word.count - minCount) / range) * 36;
-      ctx.font = `${Math.round(fontSize)}px sans-serif`;
-      const metrics = ctx.measureText(word.word);
-      const textW = metrics.width;
-      const textH = fontSize;
-
-      // Spiral placement
-      let angle = 0;
-      let radius = 0;
-      let x = 0;
-      let y = 0;
-      let found = false;
-
-      for (let step = 0; step < 500; step++) {
-        angle = step * 0.5;
-        radius = step * 1.5;
-        x = width / 2 + radius * Math.cos(angle) - textW / 2;
-        y = height / 2 + radius * Math.sin(angle) + textH / 2;
-
-        if (x < 0 || y < 0 || x + textW > width || y > height) continue;
-
-        const overlap = placed.some(
-          (p) =>
-            x < p.x + p.w && x + textW > p.x && y - textH < p.y && y > p.y - p.h
+    const layout = cloud<{ text: string; size: number; color: string }>()
+      .size([containerWidth, height])
+      .words(cloudWords)
+      .padding(4)
+      .rotate(() => (Math.random() > 0.65 ? 90 : 0))
+      .fontSize((d) => d.size!)
+      .spiral("archimedean")
+      .random(() => 0.5)
+      .on("end", (output) => {
+        setLayoutWords(
+          output.map((w) => ({
+            text: w.text!,
+            size: w.size!,
+            x: w.x!,
+            y: w.y!,
+            rotate: w.rotate!,
+            color: (w as unknown as { color: string }).color,
+          }))
         );
+      });
 
-        if (!overlap) {
-          found = true;
-          break;
-        }
-      }
-
-      if (found) {
-        ctx.fillStyle = colors[i % colors.length];
-        ctx.font = `${Math.round(fontSize)}px sans-serif`;
-        ctx.fillText(word.word, x, y);
-        placed.push({ x, y, w: textW, h: textH });
-      }
-    }
-  }, [words]);
+    layout.start();
+  }, [words, containerWidth, height]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={800}
-      height={400}
-      style={{ width: "100%", height: "auto", maxHeight: 400 }}
-    />
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <svg
+        ref={svgRef}
+        width={containerWidth}
+        height={height}
+        viewBox={`0 0 ${containerWidth} ${height}`}
+        style={{ width: "100%", height: "auto", maxHeight: height }}
+      >
+        <g transform={`translate(${containerWidth / 2},${height / 2})`}>
+          {layoutWords.map((w, i) => (
+            <text
+              key={`${w.text}-${i}`}
+              textAnchor="middle"
+              transform={`translate(${w.x},${w.y}) rotate(${w.rotate})`}
+              style={{
+                fontSize: w.size,
+                fontFamily: "'Segoe UI', Arial, sans-serif",
+                fontWeight: w.size > 30 ? 700 : 500,
+                fill: w.color,
+                cursor: "default",
+                transition: "opacity 0.2s",
+              }}
+            >
+              {w.text}
+            </text>
+          ))}
+        </g>
+      </svg>
+    </div>
   );
 }

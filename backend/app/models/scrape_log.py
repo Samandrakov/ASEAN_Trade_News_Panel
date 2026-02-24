@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
 
@@ -17,3 +17,21 @@ class ScrapeRun(Base):
     articles_new: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32))
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    log_entries: Mapped[list["ScrapeLogEntry"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="ScrapeLogEntry.timestamp",
+    )
+
+
+class ScrapeLogEntry(Base):
+    __tablename__ = "scrape_log_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("scrape_runs.id"))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    level: Mapped[str] = mapped_column(String(16), default="INFO")
+    message: Mapped[str] = mapped_column(Text)
+
+    run: Mapped["ScrapeRun"] = relationship(back_populates="log_entries")

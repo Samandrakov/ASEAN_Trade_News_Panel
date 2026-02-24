@@ -16,6 +16,19 @@ class ScrapeRunOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ScrapeLogEntryOut(BaseModel):
+    id: int
+    timestamp: datetime
+    level: str
+    message: str
+
+    model_config = {"from_attributes": True}
+
+
+class ScrapeRunDetailOut(ScrapeRunOut):
+    log_entries: list[ScrapeLogEntryOut] = []
+
+
 class ScrapeTriggerRequest(BaseModel):
     sources: list[str] | None = None
 

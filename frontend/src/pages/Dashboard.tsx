@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Col, Row, Select, Space, Typography } from "antd";
+import { Card, Col, Empty, Row, Select, Space, Typography } from "antd";
 import {
   Area,
   AreaChart,
@@ -8,7 +8,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -23,6 +22,12 @@ import {
 } from "../api/analytics";
 import { fetchCountries } from "../api/news";
 import WordCloud from "../components/WordCloud";
+
+const COUNTRY_NAMES: Record<string, string> = {
+  ID: "Индонезия",
+  VN: "Вьетнам",
+  MY: "Малайзия",
+};
 
 const COLORS = [
   "#1677ff",
@@ -69,106 +74,126 @@ export default function Dashboard() {
 
   return (
     <div>
-      <Typography.Title level={3}>Analytics Dashboard</Typography.Title>
+      <Typography.Title level={3}>Аналитика</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Визуализация данных по собранным новостям
+      </Typography.Paragraph>
 
       <Space style={{ marginBottom: 16 }}>
         <Select
-          placeholder="All countries"
+          placeholder="Все страны"
           allowClear
           style={{ width: 180 }}
           onChange={setCountry}
           options={
             countries?.map((c) => ({
               value: c.code,
-              label: c.name,
+              label: COUNTRY_NAMES[c.code] || c.name,
             })) || []
           }
         />
         <Select
           value={granularity}
-          style={{ width: 120 }}
+          style={{ width: 140 }}
           onChange={setGranularity}
           options={[
-            { value: "day", label: "Daily" },
-            { value: "week", label: "Weekly" },
-            { value: "month", label: "Monthly" },
+            { value: "day", label: "По дням" },
+            { value: "week", label: "По неделям" },
+            { value: "month", label: "По месяцам" },
           ]}
         />
       </Space>
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="Articles Timeline">
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={timeline || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#1677ff"
-                  fill="#1677ff"
-                  fillOpacity={0.3}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          <Card title="Хронология публикаций">
+            {timeline && timeline.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={timeline}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="Статей"
+                    stroke="#1677ff"
+                    fill="#1677ff"
+                    fillOpacity={0.3}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Нет данных" />
+            )}
           </Card>
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card title="Topics Distribution">
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart>
-                <Pie
-                  data={topicDist || []}
-                  dataKey="count"
-                  nameKey="tag"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  label={({ tag, percent }) =>
-                    `${tag} (${(percent * 100).toFixed(0)}%)`
-                  }
-                >
-                  {(topicDist || []).map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={COLORS[i % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          <Card title="Распределение по темам">
+            {topicDist && topicDist.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <PieChart>
+                  <Pie
+                    data={topicDist}
+                    dataKey="count"
+                    nameKey="tag"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    label={({ tag, percent }) =>
+                      `${tag} (${(percent * 100).toFixed(0)}%)`
+                    }
+                  >
+                    {topicDist.map((_, i) => (
+                      <Cell
+                        key={i}
+                        fill={COLORS[i % COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Нет данных" />
+            )}
           </Card>
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card title="Country Mentions">
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={countryDist || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tag" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#52c41a">
-                  {(countryDist || []).map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={COLORS[i % COLORS.length]}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <Card title="Упоминания стран">
+            {countryDist && countryDist.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart data={countryDist}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="tag" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Упоминаний">
+                    {countryDist.map((_, i) => (
+                      <Cell
+                        key={i}
+                        fill={COLORS[i % COLORS.length]}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Нет данных" />
+            )}
           </Card>
         </Col>
 
         <Col span={24}>
-          <Card title="Word Cloud">
-            <WordCloud words={wordFreq || []} />
+          <Card title="Облако слов">
+            {wordFreq && wordFreq.length > 0 ? (
+              <WordCloud words={wordFreq} />
+            ) : (
+              <Empty description="Нет данных" />
+            )}
           </Card>
         </Col>
       </Row>

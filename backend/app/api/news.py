@@ -15,13 +15,13 @@ router = APIRouter(tags=["news"])
 
 @router.get("/news", response_model=ArticleListResponse)
 async def list_news(
-    country: str | None = None,
-    tag_type: str | None = None,
-    tag_value: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    search: str | None = None,
-    page: int = Query(1, ge=1),
+    country: str | None = Query(None, max_length=8),
+    tag_type: str | None = Query(None, max_length=50),
+    tag_value: str | None = Query(None, max_length=100),
+    date_from: str | None = Query(None, max_length=10),
+    date_to: str | None = Query(None, max_length=10),
+    search: str | None = Query(None, max_length=200),
+    page: int = Query(1, ge=1, le=10000),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
@@ -33,9 +33,15 @@ async def list_news(
         term = f"%{search}%"
         query = query.where(Article.title.ilike(term) | Article.body.ilike(term))
     if date_from:
-        query = query.where(Article.published_date >= datetime.fromisoformat(date_from))
+        try:
+            query = query.where(Article.published_date >= datetime.fromisoformat(date_from))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format")
     if date_to:
-        query = query.where(Article.published_date <= datetime.fromisoformat(date_to))
+        try:
+            query = query.where(Article.published_date <= datetime.fromisoformat(date_to))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format")
     if tag_type and tag_value:
         query = query.join(ArticleTag).where(
             ArticleTag.tag_type == tag_type, ArticleTag.tag_value == tag_value

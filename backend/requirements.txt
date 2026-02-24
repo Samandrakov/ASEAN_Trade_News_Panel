@@ -10,4 +10,11 @@ newspaper3k
 lxml
 anthropic
 apscheduler>=3.10
+croniter>=2.0
 python-dateutil
+python-jose[cryptography]>=3.3
+bcrypt>=4.0
+python-multipart>=0.0.9
+slowapi>=0.1.9
+pytest
+pytest-asyncio
