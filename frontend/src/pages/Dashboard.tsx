@@ -144,9 +144,9 @@ export default function Dashboard() {
                     cx="50%"
                     cy="50%"
                     outerRadius={120}
-                    label={({ tag, percent }) =>
-                      `${tag} (${(percent * 100).toFixed(0)}%)`
-                    }
+                    label={((props: any) =>   // eslint-disable-line @typescript-eslint/no-explicit-any
+                      `${props.tag ?? ""} (${((props.percent ?? 0) * 100).toFixed(0)}%)`
+                    ) as any}
                   >
                     {topicDist.map((_, i) => (
                       <Cell

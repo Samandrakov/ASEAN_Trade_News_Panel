@@ -80,9 +80,9 @@ export default function WordCloud({ words, width = 900, height = 420 }: Props) {
           output.map((w) => ({
             text: w.text!,
             size: w.size!,
-            x: w.x!,
-            y: w.y!,
-            rotate: w.rotate!,
+            x: (w as unknown as LayoutWord).x,
+            y: (w as unknown as LayoutWord).y,
+            rotate: (w as unknown as LayoutWord).rotate,
             color: (w as unknown as { color: string }).color,
           }))
         );
