@@ -16,8 +16,19 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""
     jwt_secret: str = "CHANGE-ME-generate-a-random-secret-key"
     jwt_expire_minutes: int = 1440
+    jwt_refresh_expire_days: int = 30
+
+    # Alerts
+    alert_check_enabled: bool = True
+
+    # Environment mode: set to "production" to enforce secure defaults
+    environment: str = "development"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() in ("production", "prod")
 
 
 settings = Settings()

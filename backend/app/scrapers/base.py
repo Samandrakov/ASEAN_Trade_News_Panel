@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -36,10 +36,10 @@ class ScrapeStats:
     articles_skipped_short: int = 0
     articles_skipped_empty: int = 0
     articles_parse_errors: int = 0
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def summary(self) -> str:
-        elapsed = (datetime.utcnow() - self.started_at).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self.started_at).total_seconds()
         lines = [
             f"=== Scraper Report: {self.source} ===",
             f"  Duration: {elapsed:.1f}s",

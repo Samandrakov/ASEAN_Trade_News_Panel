@@ -1,16 +1,19 @@
 import asyncio
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from ..config import settings
 from ..database import async_session
+from ..models.alert import Alert, AlertMatch
 from ..models.article import Article
 from ..models.scrape_log import ScrapeLogEntry, ScrapeRun
 from ..models.tag import ArticleTag
 from ..scrapers.base import RawArticle
 from ..scrapers.registry import load_active_maps, load_map_by_id
+from ..scrapers.rss_executor import RssExecutor
 from ..scrapers.sitemap_executor import SitemapExecutor
 from ..services.llm_tagger import classify_article
 
@@ -32,7 +35,7 @@ async def _add_log(run_id: int, message: str, level: str = "INFO"):
             async with async_session() as db:
                 db.add(ScrapeLogEntry(
                     run_id=run_id,
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     level=level,
                     message=message,
                 ))
@@ -228,7 +231,7 @@ async def start_source(source_id: str) -> int | None:
     # Create ScrapeRun record
     run = ScrapeRun(
         source=source_id,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         status="running",
     )
     async with async_session() as db:
@@ -259,6 +262,50 @@ async def start_source(source_id: str) -> int | None:
     return run_id
 
 
+async def _check_alerts(new_article_ids: list[int]) -> None:
+    """Check newly stored articles against active alerts and create AlertMatch records."""
+    if not settings.alert_check_enabled or not new_article_ids:
+        return
+    try:
+        async with async_session() as db:
+            alerts_result = await db.execute(
+                select(Alert).where(Alert.active == True)  # noqa: E712
+            )
+            alerts = alerts_result.scalars().all()
+            if not alerts:
+                return
+
+            articles_result = await db.execute(
+                select(Article).where(Article.id.in_(new_article_ids))
+            )
+            articles = articles_result.scalars().all()
+
+            for alert in alerts:
+                keywords = json.loads(alert.keywords_json or "[]")
+                countries = json.loads(alert.countries_json or "[]")
+
+                for article in articles:
+                    # Country filter (if specified)
+                    if countries and article.country not in countries:
+                        continue
+
+                    # Keyword check (any keyword in title or body)
+                    if keywords:
+                        text_lower = (article.title + " " + article.body).lower()
+                        if not any(kw.lower() in text_lower for kw in keywords):
+                            continue
+
+                    db.add(AlertMatch(
+                        alert_id=alert.id,
+                        article_id=article.id,
+                        read=False,
+                    ))
+
+            await db.commit()
+    except Exception as exc:
+        logger.warning(f"[alerts] Error checking alerts: {exc}")
+
+
 async def _run_single_source(
     run_id: int,
     source_id: str,
@@ -271,14 +318,34 @@ async def _run_single_source(
     async def _log_cb(msg: str, level: str = "INFO"):
         await _add_log(run_id, msg, level)
 
-    executor = SitemapExecutor(
-        sitemap_data,
-        delay=settings.scrape_delay_seconds,
-        log_callback=_log_cb,
-    )
+    feed_type = sitemap_data.get("_type", "sitemap")
+
+    if feed_type == "rss":
+        meta = sitemap_data.get("_meta", {})
+        map_config = {
+            "feed_url": meta.get("feed_url", ""),
+            "source": source_id,
+            "source_display": meta.get("source_display", source_id),
+            "country": meta.get("country", ""),
+            "category": meta.get("category"),
+        }
+        executor = RssExecutor(
+            map_config=map_config,
+            delay_seconds=settings.scrape_delay_seconds,
+            log_callback=_log_cb,
+        )
+    else:
+        executor = SitemapExecutor(
+            sitemap_data,
+            delay=settings.scrape_delay_seconds,
+            log_callback=_log_cb,
+        )
 
     try:
-        raw_articles = await executor.scrape()
+        if feed_type == "rss":
+            raw_articles, rss_stats = await executor.execute()
+        else:
+            raw_articles = await executor.scrape()
 
         # Check cancellation after scraping
         if cancel_event.is_set():
@@ -286,33 +353,37 @@ async def _run_single_source(
             async with async_session() as db:
                 r = await db.get(ScrapeRun, run_id)
                 if r:
-                    r.finished_at = datetime.utcnow()
+                    r.finished_at = datetime.now(timezone.utc)
                     r.status = "cancelled"
                     await db.commit()
             logger.info(f"[{source_id}] Cancelled by user")
             return
 
         # Save executor stats to logs
-        stats = executor.stats
-        await _add_log(
-            run_id,
-            f"Sections attempted: {stats.sections_attempted}, "
-            f"successful: {stats.sections_successful}, "
-            f"failed: {stats.sections_failed}",
-        )
-        await _add_log(
-            run_id,
-            f"URLs found: {stats.urls_found}, "
-            f"fetched: {stats.urls_fetched}, "
-            f"failed: {len(stats.urls_failed)}",
-        )
-        await _add_log(
-            run_id,
-            f"Articles parsed: {stats.articles_parsed}, "
-            f"skipped (short): {stats.articles_skipped_short}, "
-            f"skipped (empty): {stats.articles_skipped_empty}, "
-            f"parse errors: {stats.articles_parse_errors}",
-        )
+        if feed_type == "rss":
+            stats = rss_stats
+            await _add_log(run_id, f"Feed entries found: {stats.urls_found}, parsed: {stats.articles_parsed}")
+        else:
+            stats = executor.stats
+            await _add_log(
+                run_id,
+                f"Sections attempted: {stats.sections_attempted}, "
+                f"successful: {stats.sections_successful}, "
+                f"failed: {stats.sections_failed}",
+            )
+            await _add_log(
+                run_id,
+                f"URLs found: {stats.urls_found}, "
+                f"fetched: {stats.urls_fetched}, "
+                f"failed: {len(stats.urls_failed)}",
+            )
+            await _add_log(
+                run_id,
+                f"Articles parsed: {stats.articles_parsed}, "
+                f"skipped (short): {stats.articles_skipped_short}, "
+                f"skipped (empty): {stats.articles_skipped_empty}, "
+                f"parse errors: {stats.articles_parse_errors}",
+            )
 
         found, new = await _store_articles(raw_articles, run_id=run_id)
 
@@ -322,13 +393,25 @@ async def _run_single_source(
         async with async_session() as db:
             r = await db.get(ScrapeRun, run_id)
             if r:
-                r.finished_at = datetime.utcnow()
+                r.finished_at = datetime.now(timezone.utc)
                 r.articles_found = found
                 r.articles_new = new
                 r.status = "success"
                 await db.commit()
 
         logger.info(f"[{source_id}] {msg}")
+
+        # Check alerts for newly scraped articles
+        if new > 0:
+            async with async_session() as db:
+                new_ids_result = await db.execute(
+                    select(Article.id)
+                    .where(Article.source == source_id)
+                    .order_by(Article.id.desc())
+                    .limit(new)
+                )
+                new_ids = [row[0] for row in new_ids_result.fetchall()]
+            await _check_alerts(new_ids)
 
         # Tag articles (serialised across all runs)
         if cancel_event.is_set():
@@ -345,7 +428,7 @@ async def _run_single_source(
         async with async_session() as db:
             r = await db.get(ScrapeRun, run_id)
             if r:
-                r.finished_at = datetime.utcnow()
+                r.finished_at = datetime.now(timezone.utc)
                 r.status = "cancelled"
                 await db.commit()
     except Exception as e:
@@ -355,12 +438,13 @@ async def _run_single_source(
         async with async_session() as db:
             r = await db.get(ScrapeRun, run_id)
             if r:
-                r.finished_at = datetime.utcnow()
+                r.finished_at = datetime.now(timezone.utc)
                 r.status = "failed"
                 r.error_message = str(e)
                 await db.commit()
     finally:
-        await executor.close()
+        if feed_type != "rss":
+            await executor.close()
 
 
 # ---------------------------------------------------------------------------

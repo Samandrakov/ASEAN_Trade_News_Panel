@@ -19,6 +19,7 @@ export interface Article {
   word_count: number | null;
   published_date: string | null;
   scraped_at: string;
+  tagged: boolean;
   tags: ArticleTag[];
 }
 
@@ -199,9 +200,68 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 
 export interface AuthUser {
   username: string;
 }
+
+// --- Users ---
+export interface User {
+  id: number;
+  username: string;
+  is_active: boolean;
+}
+
+// --- Bookmarks ---
+export interface Bookmark {
+  id: number;
+  article_id: number;
+  note: string | null;
+  created_at: string;
+  article_title: string | null;
+  article_url: string | null;
+  article_source_display: string | null;
+  article_country: string | null;
+}
+
+// --- Alerts ---
+export interface Alert {
+  id: number;
+  name: string;
+  keywords: string[];
+  countries: string[];
+  active: boolean;
+  created_at: string;
+}
+
+export interface AlertMatch {
+  id: number;
+  alert_id: number;
+  alert_name: string;
+  article_id: number;
+  article_title: string;
+  article_url: string;
+  article_country: string;
+  matched_at: string;
+  read: boolean;
+}
+
+// --- Sentiment trend ---
+export interface SentimentTrendPoint {
+  period: string;
+  positive: number;
+  negative: number;
+  neutral: number;
+}
+
+// --- News filters with sort ---
+export interface NewsFiltersExtended extends NewsFilters {
+  sort_by?: "date" | "title" | "word_count";
+  sort_order?: "asc" | "desc";
+}
+
+// --- Export ---
+export type ExportFormat = "csv" | "xlsx";

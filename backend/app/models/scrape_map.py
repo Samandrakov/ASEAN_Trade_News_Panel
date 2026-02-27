@@ -16,6 +16,7 @@ class ScrapeMap(Base):
     sitemap_json: Mapped[str] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     cron_expression: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
+    feed_type: Mapped[str] = mapped_column(String(32), default="sitemap")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now()
     )

@@ -1,5 +1,4 @@
 import logging
-import secrets
 import sys
 from contextlib import asynccontextmanager
 
@@ -36,19 +35,52 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Security warnings at startup
+    # Security checks at startup
     if settings.jwt_secret.startswith("CHANGE-ME"):
+        if settings.is_production:
+            logger.critical(
+                "FATAL: JWT_SECRET is using the default value in production! "
+                "Set JWT_SECRET in .env before starting."
+            )
+            raise SystemExit(1)
         logger.warning(
             "JWT_SECRET is using the default value! Set JWT_SECRET in .env for production."
         )
     if not settings.admin_password_hash:
+        if settings.is_production:
+            logger.critical(
+                "FATAL: ADMIN_PASSWORD_HASH is not set in production! "
+                "Set ADMIN_PASSWORD_HASH in .env before starting."
+            )
+            raise SystemExit(1)
         logger.warning(
             "ADMIN_PASSWORD_HASH is not set! Using default password 'admin'. "
             "Generate a hash with: python -c \"import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt()).decode())\" "
             "and set ADMIN_PASSWORD_HASH in .env"
         )
 
+    if not settings.anthropic_api_key:
+        logger.warning(
+            "ANTHROPIC_API_KEY is not set. LLM tagging and summarization will be disabled."
+        )
+
     await init_db()
+
+    # Clean up stale scrape runs from previous server crashes
+    from .database import async_session
+    from .models.scrape_log import ScrapeRun
+    from datetime import datetime, timezone
+    async with async_session() as db:
+        from sqlalchemy import update
+        stmt = (
+            update(ScrapeRun)
+            .where(ScrapeRun.status == "running")
+            .values(status="interrupted", finished_at=datetime.now(timezone.utc))
+        )
+        result = await db.execute(stmt)
+        if result.rowcount > 0:
+            logger.info(f"Cleaned up {result.rowcount} stale scrape runs from previous session")
+        await db.commit()
 
     from .scrapers.seed_maps import seed_default_maps
 
@@ -107,7 +139,10 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-from .api import analytics, auth, feeds, news, scrape, scrape_maps, summarize, tags  # noqa: E402
+from .api import (  # noqa: E402
+    alerts, analytics, auth, bookmarks, export, feeds,
+    news, scrape, scrape_maps, summarize, tags, users,
+)
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
@@ -117,6 +152,10 @@ app.include_router(summarize.router, prefix="/api")
 app.include_router(scrape.router, prefix="/api")
 app.include_router(scrape_maps.router, prefix="/api")
 app.include_router(feeds.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(bookmarks.router, prefix="/api")
+app.include_router(alerts.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
 
 
 @app.get("/api/health")

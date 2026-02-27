@@ -25,6 +25,7 @@ class ArticleListItem(BaseModel):
     word_count: int | None
     published_date: datetime | None
     scraped_at: datetime
+    tagged: bool
     tags: list[ArticleTagOut]
 
     model_config = {"from_attributes": True}

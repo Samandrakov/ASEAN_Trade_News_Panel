@@ -9,7 +9,7 @@ import type {
 import { api } from "./client";
 
 export async function fetchNews(
-  filters: NewsFilters
+  filters: NewsFilters & { sort_by?: string; sort_order?: string }
 ): Promise<ArticleListResponse> {
   const params: Record<string, string | number> = {
     page: filters.page,
@@ -21,6 +21,8 @@ export async function fetchNews(
   if (filters.date_from) params.date_from = filters.date_from;
   if (filters.date_to) params.date_to = filters.date_to;
   if (filters.search) params.search = filters.search;
+  if (filters.sort_by) params.sort_by = filters.sort_by;
+  if (filters.sort_order) params.sort_order = filters.sort_order;
 
   const { data } = await api.get<ArticleListResponse>("/news", { params });
   return data;

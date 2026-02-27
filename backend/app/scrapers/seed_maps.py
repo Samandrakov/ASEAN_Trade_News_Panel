@@ -607,28 +607,152 @@ SEED_MAPS: list[dict] = [
     },
 ]
 
+# ===== RSS SEED MAPS for additional ASEAN countries =====
+RSS_SEED_MAPS: list[dict] = [
+    # ===== SINGAPORE =====
+    {
+        "_id": "cna_sg",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6511",
+            "country": "SG",
+            "source_display": "Channel NewsAsia",
+            "category": "Business",
+        },
+    },
+    {
+        "_id": "today_sg",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.todayonline.com/feed",
+            "country": "SG",
+            "source_display": "Today Online",
+            "category": "General",
+        },
+    },
+    # ===== THAILAND =====
+    {
+        "_id": "bangkokpost",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.bangkokpost.com/rss/data/topstories.xml",
+            "country": "TH",
+            "source_display": "Bangkok Post",
+            "category": "Business",
+        },
+    },
+    {
+        "_id": "nation_thailand",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.nationthailand.com/rss",
+            "country": "TH",
+            "source_display": "The Nation Thailand",
+            "category": "General",
+        },
+    },
+    # ===== PHILIPPINES =====
+    {
+        "_id": "bworld",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.bworldonline.com/feed/",
+            "country": "PH",
+            "source_display": "BusinessWorld",
+            "category": "Business",
+        },
+    },
+    {
+        "_id": "inquirer_biz",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://business.inquirer.net/feed",
+            "country": "PH",
+            "source_display": "Philippine Daily Inquirer Business",
+            "category": "Business",
+        },
+    },
+    # ===== MYANMAR =====
+    {
+        "_id": "irrawaddy",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.irrawaddy.com/feed",
+            "country": "MM",
+            "source_display": "The Irrawaddy",
+            "category": "General",
+        },
+    },
+    # ===== CAMBODIA =====
+    {
+        "_id": "khmertimes",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.khmertimeskh.com/feed/",
+            "country": "KH",
+            "source_display": "Khmer Times",
+            "category": "General",
+        },
+    },
+    # ===== LAOS =====
+    {
+        "_id": "vientianetimes",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://www.vientianetimes.org.la/feed/",
+            "country": "LA",
+            "source_display": "Vientiane Times",
+            "category": "General",
+        },
+    },
+    # ===== BRUNEI =====
+    {
+        "_id": "borneobulletin",
+        "_type": "rss",
+        "_meta": {
+            "feed_url": "https://borneobulletin.com.bn/feed/",
+            "country": "BN",
+            "source_display": "Borneo Bulletin",
+            "category": "General",
+        },
+    },
+]
+
 
 async def seed_default_maps():
     """Insert default maps if the scrape_maps table is empty."""
     async with async_session() as db:
         result = await db.execute(select(ScrapeMap.id).limit(1))
         if result.scalar_one_or_none() is not None:
-            logger.info(
-                "[seed] Scrape maps table already populated, skipping seed"
-            )
+            logger.info("[seed] Scrape maps table already populated, skipping seed")
             return
 
-        logger.info(
-            f"[seed] Inserting {len(SEED_MAPS)} default scrape maps"
-        )
+        all_maps = list(SEED_MAPS) + list(RSS_SEED_MAPS)
+        logger.info(f"[seed] Inserting {len(all_maps)} default scrape maps")
+
         for sitemap in SEED_MAPS:
             m = ScrapeMap(
                 map_id=sitemap["_id"],
                 name=sitemap["_meta"]["source_display"],
                 country=sitemap["_meta"]["country"],
                 sitemap_json=json.dumps(sitemap, ensure_ascii=False),
+                feed_type="sitemap",
                 active=True,
             )
             db.add(m)
+
+        for rss_map in RSS_SEED_MAPS:
+            meta = rss_map["_meta"]
+            # Store RSS config as JSON (feed_url etc.) inside sitemap_json for storage consistency
+            m = ScrapeMap(
+                map_id=rss_map["_id"],
+                name=meta["source_display"],
+                country=meta["country"],
+                sitemap_json=json.dumps(rss_map, ensure_ascii=False),
+                feed_type="rss",
+                active=True,
+            )
+            db.add(m)
+
         await db.commit()
         logger.info("[seed] Default maps inserted successfully")

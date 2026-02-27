@@ -30,7 +30,10 @@ async def list_maps(
     maps = result.scalars().all()
     out = []
     for m in maps:
-        data = json.loads(m.sitemap_json)
+        try:
+            data = json.loads(m.sitemap_json)
+        except (json.JSONDecodeError, TypeError):
+            data = {}
         out.append(
             ScrapeMapSummaryOut(
                 id=m.id,

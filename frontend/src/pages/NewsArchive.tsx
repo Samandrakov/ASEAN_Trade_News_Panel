@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   DatePicker,
+  Dropdown,
   Form,
   Input,
   Modal,
@@ -15,23 +16,27 @@ import {
   Typography,
   message,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
+import {
+  BookOutlined,
+  BookFilled,
+  DownloadOutlined,
+  ExclamationCircleOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
+import type { ColumnsType, TableProps } from "antd/es/table";
+import type { SorterResult } from "antd/es/table/interface";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { Link } from "react-router-dom";
 import { fetchCountries, fetchNews, fetchTags } from "../api/news";
 import { fetchFeeds, createFeed, deleteFeed } from "../api/feeds";
+import { fetchBookmarks, createBookmark, deleteBookmarkByArticle } from "../api/bookmarks";
+import { downloadExport } from "../api/export";
+import { COUNTRY_NAMES } from "../constants";
 import type { Article, NewsFilters, FeedFilters, SavedFeed } from "../types";
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-
-const COUNTRY_NAMES: Record<string, string> = {
-  ID: "Индонезия",
-  VN: "Вьетнам",
-  MY: "Малайзия",
-};
 
 const TAG_COLORS: Record<string, string> = {
   country_mention: "blue",
@@ -70,7 +75,7 @@ function describeFilters(filters: NewsFilters): string {
 
 export default function NewsArchive() {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<NewsFilters>({
+  const [filters, setFilters] = useState<NewsFilters & { sort_by?: string; sort_order?: string }>({
     page: 1,
     page_size: 20,
   });
@@ -78,6 +83,8 @@ export default function NewsArchive() {
   const [searchValue, setSearchValue] = useState("");
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveForm] = Form.useForm();
+  const [exportLoading, setExportLoading] = useState(false);
+  const [msg, ctxHolder] = message.useMessage();
 
   const { data, isLoading } = useQuery({
     queryKey: ["news", filters],
@@ -98,6 +105,59 @@ export default function NewsArchive() {
     queryKey: ["feeds"],
     queryFn: fetchFeeds,
   });
+
+  const { data: bookmarks } = useQuery({
+    queryKey: ["bookmarks"],
+    queryFn: fetchBookmarks,
+  });
+  const bookmarkedIds = new Set(bookmarks?.map((b) => b.article_id) || []);
+
+  const addBookmarkMut = useMutation({
+    mutationFn: (article_id: number) => createBookmark(article_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+      msg.success("Добавлено в закладки");
+    },
+  });
+
+  const removeBookmarkMut = useMutation({
+    mutationFn: (article_id: number) => deleteBookmarkByArticle(article_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+      msg.success("Удалено из закладок");
+    },
+  });
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    setExportLoading(true);
+    try {
+      await downloadExport({
+        country: filters.country,
+        date_from: filters.date_from,
+        date_to: filters.date_to,
+        search: filters.search,
+        tag_type: filters.tag_type,
+        tag_value: filters.tag_value,
+        format,
+      });
+    } catch {
+      msg.error("Ошибка экспорта");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleTableChange: TableProps<Article>["onChange"] = (_, __, sorter) => {
+    const s = sorter as SorterResult<Article>;
+    const sortMap: Record<string, string> = {
+      date: "date",
+      title: "title",
+      word_count: "word_count",
+    };
+    const sort_by = s.field ? sortMap[s.field as string] : undefined;
+    const sort_order = s.order === "ascend" ? "asc" : s.order === "descend" ? "desc" : undefined;
+    setFilters((f) => ({ ...f, sort_by, sort_order, page: 1 }));
+  };
 
   const createMutation = useMutation({
     mutationFn: createFeed,
@@ -147,7 +207,13 @@ export default function NewsArchive() {
   };
 
   const loadFeed = (feed: SavedFeed) => {
-    const parsed: FeedFilters = JSON.parse(feed.filters_json);
+    let parsed: FeedFilters;
+    try {
+      parsed = JSON.parse(feed.filters_json);
+    } catch {
+      msg.error("Ошибка чтения фильтров подборки");
+      return;
+    }
     const newFilters: NewsFilters = {
       page: 1,
       page_size: filters.page_size,
@@ -206,24 +272,52 @@ export default function NewsArchive() {
 
   const columns: ColumnsType<Article> = [
     {
+      title: "",
+      key: "bookmark",
+      width: 36,
+      render: (_: unknown, record: Article) => {
+        const isBookmarked = bookmarkedIds.has(record.id);
+        return (
+          <Tooltip title={isBookmarked ? "Убрать из закладок" : "В закладки"}>
+            <Button
+              type="text"
+              size="small"
+              icon={isBookmarked ? <BookFilled style={{ color: "#1677ff" }} /> : <BookOutlined />}
+              onClick={() =>
+                isBookmarked
+                  ? removeBookmarkMut.mutate(record.id)
+                  : addBookmarkMut.mutate(record.id)
+              }
+            />
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: "Дата",
       dataIndex: "published_date",
       key: "date",
       width: 110,
-      render: (d: string | null) =>
-        d ? dayjs(d).format("YYYY-MM-DD") : "Н/Д",
-      sorter: (a, b) =>
-        (a.published_date || "").localeCompare(b.published_date || ""),
+      render: (d: string | null) => d ? dayjs(d).format("YYYY-MM-DD") : "Н/Д",
+      sorter: true,
     },
     {
       title: "Заголовок",
       dataIndex: "title",
       key: "title",
       ellipsis: true,
+      sorter: true,
       render: (title: string, record: Article) => (
-        <Tooltip title={title}>
-          <Link to={`/news/${record.id}`}>{title}</Link>
-        </Tooltip>
+        <Space size={4}>
+          <Tooltip title={title}>
+            <Link to={`/news/${record.id}`}>{title}</Link>
+          </Tooltip>
+          {!record.tagged && (
+            <Tooltip title="Ожидает классификации">
+              <ExclamationCircleOutlined style={{ color: "#faad14", fontSize: 12 }} />
+            </Tooltip>
+          )}
+        </Space>
       ),
     },
     {
@@ -252,8 +346,8 @@ export default function NewsArchive() {
       dataIndex: "word_count",
       key: "word_count",
       width: 70,
+      sorter: true,
       render: (w: number | null) => w || "-",
-      sorter: (a, b) => (a.word_count || 0) - (b.word_count || 0),
     },
     {
       title: "Теги",
@@ -279,11 +373,28 @@ export default function NewsArchive() {
 
   return (
     <div>
-      <Typography.Title level={3}>Реестр новостей</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        Структурированный архив экономических новостей Индонезии, Вьетнама и
-        Малайзии
-      </Typography.Paragraph>
+      {ctxHolder}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <Typography.Title level={3} style={{ marginBottom: 4 }}>Реестр новостей</Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            Архив экономических новостей стран ASEAN
+          </Typography.Paragraph>
+        </div>
+        <Dropdown
+          menu={{
+            items: [
+              { key: "csv", label: "Экспорт CSV", onClick: () => handleExport("csv") },
+              { key: "xlsx", label: "Экспорт Excel (.xlsx)", onClick: () => handleExport("xlsx") },
+            ],
+          }}
+          placement="bottomRight"
+        >
+          <Button icon={<DownloadOutlined />} loading={exportLoading}>
+            Экспорт
+          </Button>
+        </Dropdown>
+      </div>
 
       {/* Feed bar */}
       <Card size="small" style={{ marginBottom: 12 }}>
@@ -417,6 +528,7 @@ export default function NewsArchive() {
         rowKey="id"
         loading={isLoading}
         size="small"
+        onChange={handleTableChange}
         pagination={{
           current: data?.page || 1,
           pageSize: data?.page_size || 20,

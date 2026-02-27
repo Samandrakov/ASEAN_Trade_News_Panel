@@ -1,4 +1,4 @@
-import type { TagDistribution, TimelinePoint, WordFrequency } from "../types";
+import type { SentimentTrendPoint, TagDistribution, TimelinePoint, WordFrequency } from "../types";
 import { api } from "./client";
 
 export async function fetchWordFrequency(params?: {
@@ -29,6 +29,19 @@ export async function fetchTagDistribution(params?: {
 }): Promise<TagDistribution[]> {
   const { data } = await api.get<TagDistribution[]>(
     "/analytics/tag-distribution",
+    { params }
+  );
+  return data;
+}
+
+export async function fetchSentimentTrend(params?: {
+  country?: string;
+  date_from?: string;
+  date_to?: string;
+  granularity?: "day" | "week" | "month";
+}): Promise<SentimentTrendPoint[]> {
+  const { data } = await api.get<SentimentTrendPoint[]>(
+    "/analytics/sentiment-trend",
     { params }
   );
   return data;

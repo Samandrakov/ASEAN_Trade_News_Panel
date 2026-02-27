@@ -38,6 +38,13 @@ async def get_countries(db: AsyncSession = Depends(get_db)):
         "ID": "Indonesia",
         "VN": "Vietnam",
         "MY": "Malaysia",
+        "SG": "Singapore",
+        "TH": "Thailand",
+        "PH": "Philippines",
+        "MM": "Myanmar",
+        "KH": "Cambodia",
+        "LA": "Laos",
+        "BN": "Brunei",
     }
     return [
         {

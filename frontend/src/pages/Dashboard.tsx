@@ -8,6 +8,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -16,18 +17,14 @@ import {
   YAxis,
 } from "recharts";
 import {
+  fetchSentimentTrend,
   fetchTagDistribution,
   fetchTimeline,
   fetchWordFrequency,
 } from "../api/analytics";
 import { fetchCountries } from "../api/news";
 import WordCloud from "../components/WordCloud";
-
-const COUNTRY_NAMES: Record<string, string> = {
-  ID: "Индонезия",
-  VN: "Вьетнам",
-  MY: "Малайзия",
-};
+import { COUNTRY_NAMES } from "../constants";
 
 const COLORS = [
   "#1677ff",
@@ -70,6 +67,11 @@ export default function Dashboard() {
   const { data: wordFreq } = useQuery({
     queryKey: ["word-frequency", country],
     queryFn: () => fetchWordFrequency({ country, top_n: 80 }),
+  });
+
+  const { data: sentimentTrend } = useQuery({
+    queryKey: ["sentiment-trend", country, granularity],
+    queryFn: () => fetchSentimentTrend({ country, granularity: granularity as "day" | "week" | "month" }),
   });
 
   return (
@@ -183,6 +185,27 @@ export default function Dashboard() {
               </ResponsiveContainer>
             ) : (
               <Empty description="Нет данных" />
+            )}
+          </Card>
+        </Col>
+
+        <Col span={24}>
+          <Card title="Тренд тональности">
+            {sentimentTrend && sentimentTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={sentimentTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="positive" name="Позитивные" fill="#52c41a" stackId="a" />
+                  <Bar dataKey="neutral" name="Нейтральные" fill="#8c8c8c" stackId="a" />
+                  <Bar dataKey="negative" name="Негативные" fill="#ff4d4f" stackId="a" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Нет данных по настроениям (требуется LLM-тегирование)" />
             )}
           </Card>
         </Col>

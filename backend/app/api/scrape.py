@@ -1,11 +1,15 @@
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..api.deps import get_db, require_auth
+
+limiter = Limiter(key_func=get_remote_address)
 from ..models.article import Article
 from ..models.scrape_log import ScrapeLogEntry, ScrapeRun
 from ..pipeline.orchestrator import (
@@ -30,7 +34,9 @@ router = APIRouter(tags=["scrape"])
 
 
 @router.post("/scrape/trigger", response_model=ScrapeTriggerResponse)
+@limiter.limit("2/minute")
 async def trigger_scrape(
+    request: Request,
     req: ScrapeTriggerRequest,
     background_tasks: BackgroundTasks,
     _user: str = Depends(require_auth),
