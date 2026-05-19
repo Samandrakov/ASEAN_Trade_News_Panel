@@ -147,16 +147,27 @@ export default function NewsArchive() {
     }
   };
 
-  const handleTableChange: TableProps<Article>["onChange"] = (_, __, sorter) => {
-    const s = sorter as SorterResult<Article>;
-    const sortMap: Record<string, string> = {
-      date: "date",
-      title: "title",
-      word_count: "word_count",
-    };
-    const sort_by = s.field ? sortMap[s.field as string] : undefined;
-    const sort_order = s.order === "ascend" ? "asc" : s.order === "descend" ? "desc" : undefined;
-    setFilters((f) => ({ ...f, sort_by, sort_order, page: 1 }));
+  const handleTableChange: TableProps<Article>["onChange"] = (pagination, _, sorter, extra) => {
+    if (extra.action === "paginate") {
+      setFilters((f) => ({
+        ...f,
+        page: pagination.current || f.page,
+        page_size: pagination.pageSize || f.page_size,
+      }));
+      return;
+    }
+
+    if (extra.action === "sort") {
+      const s = Array.isArray(sorter) ? sorter[0] : (sorter as SorterResult<Article>);
+      const sortMap: Record<string, string> = {
+        date: "date",
+        title: "title",
+        word_count: "word_count",
+      };
+      const sort_by = s.field ? sortMap[s.field as string] : undefined;
+      const sort_order = s.order === "ascend" ? "asc" : s.order === "descend" ? "desc" : undefined;
+      setFilters((f) => ({ ...f, sort_by, sort_order, page: 1 }));
+    }
   };
 
   const createMutation = useMutation({
